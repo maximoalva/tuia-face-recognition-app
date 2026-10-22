@@ -5,8 +5,8 @@ __pycache__/
 .pytest_cache/
 output/*
 !output/.gitkeep
-model/*
-!model/.gitkeep
+models/*
+!models/.gitkeep
 *.pth
 *.onnx
 data/*
