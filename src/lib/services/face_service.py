@@ -84,10 +84,8 @@ class FaceService:
     def _load_detector(self, detector_path: Path | None) -> any:
         """
         Load the face detector once (called from __init__).
-        By default loads a .pth / .onnx file from DETECTOR_MODEL_NAME, or returns None
-        when it is not set. Override it if your detector comes from a library
-        (InsightFace, OpenCV YuNet, MTCNN, etc.) and configure it with
-        self.det_score_threshold and self.det_input_size.
+        Same detector as notebook 1: InsightFace FaceAnalysis (buffalo_l SCRFD),
+        detection module only. detector_path is the buffalo_l folder inside MODEL_PATH.
         """
         if detector_path is None or not Path(detector_path).is_dir():
             raise ValueError(f"Detector path does not exist: {detector_path}")
@@ -120,25 +118,73 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        height, width = image.shape[:2]
+        # Same detection as notebook 1 (sorted by area), dropping faces below MIN_FACE_SIZE
+        faces = [
+            f for f in face_pipeline.detect_faces(self.detector, image)
+            if min(f["bbox"][2] - f["bbox"][0], f["bbox"][3] - f["bbox"][1]) >= self.min_face_size
+        ]
+        # Keep the landmarks so align_face can reuse them for this same image
+        self._last_detection = (id(image), faces)
 
+        boxes: list[tuple[int, int, int, int]] = []
+        for face in faces:
+            x1, y1, x2, y2 = (int(round(float(v))) for v in face["bbox"])
+            boxes.append(self._clip_xyxy(x1, y1, x2, y2, height, width))
+        return boxes
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
         """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
+        Align with face_pipeline.align_face (norm_crop to the ArcFace template), as in
+        notebook 1, using the landmarks of the detection that matches the box.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        x1, y1, x2, y2 = box
+        # Reuse the detection from detect_faces if it is the same image; otherwise detect again
+        if getattr(self, "_last_detection", (None, []))[0] != id(image):
+            self.detect_faces(image)
+        faces = self._last_detection[1]
+
+        target = np.array([x1, y1, x2, y2], dtype=np.float32)
+        ious = [self._iou(f["bbox"], target) for f in faces]
+        if not ious or max(ious) < 0.3:
+            # Without landmarks the face cannot be aligned: fall back to the resized box crop
+            logger.warning(f"No landmarks found for box {box}; using unaligned crop")
+            face_img = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
+            return AlignedFace(bbox=box, keypoints=None, image=face_img)
+
+        kps = faces[int(np.argmax(ious))]["kps"]
+        face_img = face_pipeline.align_face(image, kps, self.face_size)
+        return AlignedFace(
+            bbox=box,
+            keypoints=kps - np.array([x1, y1], dtype=np.float32),  # relative to the box
+            image=face_img,
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
-        
+        if face.embedding is not None:
+            return face.embedding
+
+        # ArcFace preprocessing:
+        # BGR->RGB, (x - 127.5) / 127.5, HWC->NCHW
+        blob = cv2.dnn.blobFromImage(
+            face.image,
+            scalefactor=1.0 / 127.5,
+            size=(self.face_size, self.face_size),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+        )
+        input_name = self.model.get_inputs()[0].name
+        emb = self.model.run(None, {input_name: blob})[0][0]
+        emb = emb / (np.linalg.norm(emb) + 1e-12)
+        return emb.astype(float).tolist()
+      
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:
