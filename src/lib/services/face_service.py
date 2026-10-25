@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime
+from lib import face_pipeline
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
@@ -88,9 +89,15 @@ class FaceService:
         (InsightFace, OpenCV YuNet, MTCNN, etc.) and configure it with
         self.det_score_threshold and self.det_input_size.
         """
-        if detector_path is None:
-            return None
-        return self._load_model(detector_path)
+        if detector_path is None or not Path(detector_path).is_dir():
+            raise ValueError(f"Detector path does not exist: {detector_path}")
+        # FaceAnalysis looks for the model in <root>/models/buffalo_l
+        return face_pipeline.load_face_app(
+            root=Path(detector_path).parent.parent,
+            det_size=self.det_input_size,
+            det_thresh=self.det_score_threshold,
+            modules=("detection",),
+        )
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
