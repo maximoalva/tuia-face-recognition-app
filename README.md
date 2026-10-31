@@ -181,15 +181,33 @@ Ver detalles y recomendaciones en [ENUNCIADO.md](ENUNCIADO.md#4-parte-3--integra
 
 ## Modelo y fine-tuning
 
-Completar en la entrega final:
+El detalle completo está en `2-train.ipynb`.
 
-- Modelo elegido y link público de descarga
-- Arquitectura (ResNet, EfficientNet, ViT, CNN custom, etc.)
-- Justificación técnica y trade-offs frente al modelo descartado
-- Hiperparámetros y proceso de entrenamiento / fine-tuning
-- Umbral de similitud elegido y cómo se calibró
-- Análisis de errores (FP/FN)
-- Métricas: accuracy, precision, recall, AUC/EER
+**Modelo elegido:** el reconocedor `w600k_r50.onnx` del paquete `buffalo_l` de InsightFace, sin reentrenar. Es una ResNet-50 entrenada con la loss ArcFace sobre WebFace600K, con 43,6 millones de parámetros y embeddings de 512 dimensiones. El detector es `det_10g.onnx` (SCRFD-10GF) del mismo paquete. Los modelos de InsightFace son solo para investigación no comercial.
+
+Link público de descarga (release oficial de InsightFace): https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip. Se descomprime en `models/buffalo_l/`.
+
+**Modelo descartado:** una CNN propia (`src/lib/models/custom_cnn.py`) de 4 bloques convolucionales con BatchNorm, global average pooling, Dropout y embedding de 128 dimensiones normalizado, con 1,2 millones de parámetros. La entrenamos desde cero con las 696 personas de train como clasificador por coseno, con AdamW (lr 0,001, weight decay 0,01), ReduceLROnPlateau, early stopping y batch de 128, y augmentation solo en train. Probamos dos cabezas, softmax y ArcFace (margen 0,5), y elegimos softmax porque separó mejor a las personas nuevas de validación.
+
+**Umbral:** `SIMILARITY_THRESHOLD=0.31` con similitud coseno. Lo calibramos en validación simulando la app (cada consulta contra la galería de personas registradas): es el umbral más bajo con el que como mucho el 1% de los desconocidos recibe un nombre. El umbral del EER de la verificación (0,19) no sirve para la app porque le daba un nombre a más de la mitad de los desconocidos.
+
+**Métricas en test** (150 personas que ninguno de los modelos vio al entrenar):
+
+| Métrica | CNN propia | InsightFace |
+|---|---|---|
+| AUC (verificación) | 0,928 | 0,99996 |
+| EER | 14,9% | 0,24% |
+| TAR @ FAR=1e-3 | 25,0% | 99,6% |
+| Top-1 | 51,1% | 100% |
+| Precision / Recall / F1 macro | 53,9% / 9,7% / 14,8% | 99,8% / 99,7% / 99,8% |
+| Registrados reconocidos con su nombre | 9,7% | 99,7% |
+| Desconocidos rechazados | 99,6% | 99,2% |
+| Latencia en CPU (ms por rostro) | ~3 | 30 a 40 |
+| Tamaño (MB) | 4,8 | 174 |
+
+**Justificación:** elegimos InsightFace por desempeño. Con el nivel de seguridad que fijamos, la CNN propia reconoce a menos del 10% de las personas registradas, y no existe un umbral donde sus dos errores sean bajos a la vez. Es 36 veces más chica y unas 10 veces más rápida, pero la latencia de InsightFace alcanza para la app, que procesa fotos sueltas. La CNN propia rinde menos principalmente por los datos: con unas 18 fotos de 696 personas aprendió atributos generales (color de piel, pelo, género, expresión) y no los rasgos finos que distinguen a personas parecidas.
+
+**Análisis de errores:** los falsos negativos de los dos modelos aparecen sobre todo con la cabeza girada y con cambios de apariencia (anteojos, gorras, maquillaje, pelo). Los falsos positivos de InsightFace son personas que se parecen de verdad, con similitudes cercanas al umbral. También encontramos algunas fotos de CelebA que parecen tener la etiqueta equivocada.
 
 ## Dataset
 
