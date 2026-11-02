@@ -211,13 +211,19 @@ Link público de descarga (release oficial de InsightFace): https://github.com/d
 
 ## Dataset
 
-Documentar:
+El detalle completo está en `1-pre-processing.ipynb`.
 
-- Fuente de las imágenes (propias y/o públicas) y su licencia
-- Cantidad por clase/persona
-- Balance de clases
-- Variaciones (iluminación, pose, expresión)
-- Reglas de filtrado y calidad
+**Fuente y licencia:** usamos CelebA (Large-scale CelebFaces Attributes), de MMLAB de The Chinese University of Hong Kong, en su versión de rostros alineados (`img_align_celeba`, 178×218 px). Tiene 202.599 fotos de 10.177 celebridades. Su licencia permite usarlo solo para investigación académica no comercial y no permite redistribuirlo, así que no subimos imágenes ni datos procesados: se descarga desde la página oficial (https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) y se procesa corriendo la notebook 1.
+
+**Cantidad por persona y balance:** nos quedamos con las personas que tienen al menos 21 fotos (la mediana de CelebA) y elegimos 1.000 al azar. Después de la limpieza exigimos un mínimo de 15 fotos por persona. El dataset final tiene **25.721 imágenes de 995 personas**, con entre 15 y 30 fotos cada una (mediana 27). La persona con más fotos tiene el doble que la que menos tiene, así que no hizo falta corregir el desbalance al entrenar.
+
+**Variaciones:** las fotos tienen variaciones reales de iluminación, pose, expresión y oclusiones (anteojos, sombreros, pelo). Las medimos con los píxeles del rostro, los puntos de la cara y los atributos anotados de CelebA. Las conservamos porque son las que el modelo tiene que tolerar.
+
+**Reglas de filtrado y calidad:** aplicamos reglas con umbrales fijos y validados con ejemplos. Descartamos archivos corruptos, fotos sin rostro o con varios rostros ambiguos, rostros de menos de 40 px en la foto original, fotos borrosas (varianza del Laplaciano), sin color o mal expuestas, y casi-duplicados dentro de una misma persona y entre personas distintas. También descartamos las fotos que se parecen más a otra persona que a la suya según los embeddings de InsightFace (posibles etiquetas equivocadas), un par de gemelas y las personas que quedaron con menos de 15 fotos.
+
+**Detección y alineación:** detectamos los rostros con SCRFD (`buffalo_l` de InsightFace) y los alineamos a 112×112 con los 5 puntos de la cara. Es el mismo pipeline que usa la app (`src/lib/face_pipeline.py`).
+
+**Splits:** separamos por persona en 70% train (696 personas), 15% validación (149) y 15% test (150), así que las personas de validación y test nunca se ven al entrenar. En validación y test, unas 120 personas de cada uno se registran con 3 fotos y las otras 30 se usan como desconocidos, para evaluar el rechazo como `unknown`.
 
 ## Notas importantes
 
