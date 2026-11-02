@@ -207,7 +207,7 @@ Link público de descarga (release oficial de InsightFace): https://github.com/d
 
 **Justificación:** elegimos InsightFace por desempeño. Con el nivel de seguridad que fijamos, la CNN propia reconoce a menos del 10% de las personas registradas, y no existe un umbral donde sus dos errores sean bajos a la vez. Es 36 veces más chica y unas 10 veces más rápida, pero la latencia de InsightFace alcanza para la app, que procesa fotos sueltas. La CNN propia rinde menos principalmente por los datos: con unas 18 fotos de 696 personas aprendió atributos generales (color de piel, pelo, género, expresión) y no los rasgos finos que distinguen a personas parecidas.
 
-**Análisis de errores:** los falsos negativos de los dos modelos aparecen sobre todo con la cabeza girada y con cambios de apariencia (anteojos, gorras, maquillaje, pelo). Los falsos positivos de InsightFace son personas que se parecen de verdad, con similitudes cercanas al umbral. También encontramos algunas fotos de CelebA que parecen tener la etiqueta equivocada.
+**Análisis de errores:** los falsos negativos de los dos modelos aparecen sobre todo con la cabeza girada, con rostros que eran chicos en la foto original y con cambios de apariencia (anteojos, gorras, maquillaje, pelo). Los falsos positivos de InsightFace son personas que se parecen de verdad, con similitudes cercanas al umbral. También encontramos algunas fotos de CelebA que parecen tener la etiqueta equivocada.
 
 ## Dataset
 
