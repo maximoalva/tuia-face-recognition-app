@@ -222,7 +222,7 @@ Link público de descarga (release oficial de InsightFace): https://github.com/d
 
 El detalle completo está en `1-pre-processing.ipynb`.
 
-**Fuente y licencia:** usamos CelebA (Large-scale CelebFaces Attributes), de MMLAB de The Chinese University of Hong Kong, en su versión de rostros alineados (`img_align_celeba`, 178×218 px). Tiene 202.599 fotos de 10.177 celebridades. Su licencia permite usarlo solo para investigación académica no comercial y no permite redistribuirlo, así que no subimos imágenes ni datos procesados: se descarga desde la página oficial (https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) y se procesa corriendo la notebook 1.
+**Fuente y licencia:** usamos CelebA (Large-scale CelebFaces Attributes), de MMLAB de The Chinese University of Hong Kong, en su versión de rostros alineados (`img_align_celeba`, 178×218 px). Tiene 202.599 fotos de 10.177 celebridades. Su licencia permite usarlo solo para investigación académica no comercial y no permite redistribuirlo, así que no subimos el dataset ni los datos procesados: se descarga desde la página oficial (https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) y se procesa corriendo la notebook 1.
 
 **Cantidad por persona y balance:** nos quedamos con las personas que tienen al menos 21 fotos (la mediana de CelebA) y elegimos 1.000 al azar. Después de la limpieza exigimos un mínimo de 15 fotos por persona. El dataset final tiene **25.721 imágenes de 995 personas**, con entre 15 y 30 fotos cada una (mediana 27). La persona con más fotos tiene el doble que la que menos tiene, así que no hizo falta corregir el desbalance al entrenar.
 
