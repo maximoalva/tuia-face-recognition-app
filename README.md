@@ -36,9 +36,13 @@ tuia-face-recognition-app/
 │   └── lib/
 │       ├── api.py               # Endpoints /upload, /insert, /predict, /status, /files
 │       ├── config.py            # Configuración vía .env
+│       ├── face_pipeline.py     # Detección y alineación, compartidas con las notebooks
+│       ├── augmentation_pipeline.py  # Augmentation del set de train
+│       ├── models/
+│       │   └── custom_cnn.py    # CNN del modelo A (notebook 2)
 │       ├── schemas.py
 │       ├── services/
-│       │   ├── face_service.py  # ⚠️ Funciones a implementar
+│       │   ├── face_service.py  # Detección, alineación y embeddings
 │       │   └── task_manager.py
 │       └── storage/
 │           ├── base.py
@@ -63,9 +67,16 @@ tuia-face-recognition-app/
 
 ## Configurá tu modelo
 
-Entrená tu modelo y guardalo dentro de la carpeta `models`. El backend admite modelos con extensión **.pth** (PyTorch, se carga con `torch.load` el modelo completo) o **.onnx** (se carga con `onnxruntime`). Si usan otro framework, expórtenlo a **.onnx**.
+La app usa el paquete `buffalo_l` de InsightFace: el detector SCRFD (`det_10g.onnx`) y el reconocedor ArcFace (`w600k_r50.onnx`). No está en el repositorio porque los modelos no se versionan. Hay que descargarlo del release oficial y descomprimirlo dentro de `models/buffalo_l/`:
 
-Recordá actualizar la configuración del `.env` correspondiente (`MODEL_NAME`, `EMBEDDING_DIM`, `FACE_SIZE`, `SIMILARITY_THRESHOLD`) para que apunte a tu modelo.
+```bash
+curl -L -o buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+unzip buffalo_l.zip -d models/buffalo_l
+```
+
+En Windows, desde PowerShell: `Expand-Archive buffalo_l.zip -DestinationPath models/buffalo_l`.
+
+Los dos `.env.*.example` ya apuntan a este modelo (`MODEL_NAME=buffalo_l/w600k_r50.onnx`, `DETECTOR_MODEL_NAME=buffalo_l`) y tienen el umbral que calibramos en la notebook 2 (`SIMILARITY_THRESHOLD=0.31`).
 
 > El backend no arranca si no existe el archivo `models/<MODEL_NAME>`.
 
@@ -138,7 +149,7 @@ uvicorn frontend.app:app --port 8080
 Ajustá el archivo *.env.local.example* a tus necesidades. Desde la carpeta `src`, en otra terminal:
 
 ```bash
-cp ../models/<NOMBRE_DE_TU_MODELO> models/
+cp -r ../models/buffalo_l models/
 cp ../.env.local.example .env
 uvicorn app.main:app --reload --port 8000
 ```
@@ -169,15 +180,13 @@ No hardcodeen parámetros: configúrenlos mediante `.env`.
 - Persistencia configurable en JSON o en PostgreSQL + pgvector (`USE_PGVECTOR`).
 - Frontend para registrar identidades, predecir y visualizar los resultados (cajas, etiquetas y keypoints).
 
-### A implementar por el grupo (`src/lib/services/face_service.py`)
+### Implementado por el grupo (`src/lib/services/face_service.py`)
 
-Estas funciones hoy lanzan `NotImplementedError`:
+1. `detect_faces`: detecta los rostros con SCRFD, el mismo detector que usamos en la notebook 1. Descarta las detecciones con score menor a `DET_SCORE_THRESHOLD` y los rostros de lado menor a `MIN_FACE_SIZE` (40 px, el mismo mínimo que en la limpieza del dataset), y devuelve las cajas `(x1, y1, x2, y2)`.
+2. `align_face`: toma los 5 puntos de la cara que da el detector y los lleva a la plantilla de ArcFace con una transformación de similitud (`norm_crop`), en un recorte de `FACE_SIZE` (112×112). Devuelve un `AlignedFace` con los keypoints relativos a la caja.
+3. `extract_embedding_from_face`: pasa el rostro de BGR a RGB, lo escala con `(x - 127.5) / 127.5`, lo corre en `w600k_r50.onnx` y normaliza L2 el embedding de 512 dimensiones.
 
-1. `detect_faces`: detección de rostros. Devuelve las cajas `(x1, y1, x2, y2)`.
-2. `align_face`: alineación con landmarks y normalización a `FACE_SIZE`. Devuelve un `AlignedFace`.
-3. `extract_embedding_from_face`: extracción del embedding de dimensión `EMBEDDING_DIM`, normalizado L2.
-
-Ver detalles y recomendaciones en [ENUNCIADO.md](ENUNCIADO.md#4-parte-3--integración-en-la-aplicación).
+Para cargar el detector modificamos `_load_detector`: en lugar de un archivo `.pth`/`.onnx`, carga el `FaceAnalysis` de InsightFace con solo el módulo de detección, desde la carpeta `buffalo_l`. La detección y la alineación están en `src/lib/face_pipeline.py`, que también usan las notebooks, así el preprocesamiento es el mismo al entrenar y en la app.
 
 ## Modelo y fine-tuning
 
