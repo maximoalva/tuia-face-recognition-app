@@ -5,11 +5,13 @@ __pycache__/
 .pytest_cache/
 output/*
 !output/.gitkeep
-model/*
-!model/.gitkeep
+models/*
+!models/.gitkeep
 *.pth
 *.onnx
 data/*
 .DS_Store
 src/output/*
 !src/output/.gitkeep
+.continueignore
+.continue/
