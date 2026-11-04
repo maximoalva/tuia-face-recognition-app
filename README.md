@@ -196,6 +196,8 @@ El detalle completo está en `2-train.ipynb`.
 
 Link público de descarga (release oficial de InsightFace): https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip. Se descomprime en `models/buffalo_l/`.
 
+También dejamos los modelos en una carpeta pública de Google Drive: https://drive.google.com/drive/folders/1HkZBFbuObM0hRuk4geiejqmRZC025INa?usp=sharing. Tiene `buffalo_l` y `modelo_a.zip`, con los pesos de la CNN propia (los checkpoints de los dos experimentos y el ONNX). `modelo_a.zip` se descomprime en `models/` y crea la carpeta `models/modelo_a/`.
+
 **Modelo descartado:** una CNN propia (`src/lib/models/custom_cnn.py`) de 4 bloques convolucionales con BatchNorm, global average pooling, Dropout y embedding de 128 dimensiones normalizado, con 1,2 millones de parámetros. La entrenamos desde cero con las 696 personas de train como clasificador por coseno, con AdamW (lr 0,001, weight decay 0,01), ReduceLROnPlateau, early stopping y batch de 128, y augmentation solo en train. Probamos dos cabezas, softmax y ArcFace (margen 0,5), y elegimos softmax porque separó mejor a las personas nuevas de validación.
 
 **Umbral:** `SIMILARITY_THRESHOLD=0.31` con similitud coseno. Lo calibramos en validación simulando la app (cada consulta contra la galería de personas registradas): es el umbral más bajo con el que como mucho el 1% de los desconocidos recibe un nombre. El umbral del EER de la verificación (0,19) no sirve para la app porque le daba un nombre a más de la mitad de los desconocidos.
