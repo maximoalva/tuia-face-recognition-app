@@ -36,9 +36,13 @@ tuia-face-recognition-app/
 │   └── lib/
 │       ├── api.py               # Endpoints /upload, /insert, /predict, /status, /files
 │       ├── config.py            # Configuración vía .env
+│       ├── face_pipeline.py     # Detección y alineación, compartidas con las notebooks
+│       ├── augmentation_pipeline.py  # Augmentation del set de train
+│       ├── models/
+│       │   └── custom_cnn.py    # CNN del modelo A (notebook 2)
 │       ├── schemas.py
 │       ├── services/
-│       │   ├── face_service.py  # ⚠️ Funciones a implementar
+│       │   ├── face_service.py  # Detección, alineación y embeddings
 │       │   └── task_manager.py
 │       └── storage/
 │           ├── base.py
@@ -63,9 +67,16 @@ tuia-face-recognition-app/
 
 ## Configurá tu modelo
 
-Entrená tu modelo y guardalo dentro de la carpeta `models`. El backend admite modelos con extensión **.pth** (PyTorch, se carga con `torch.load` el modelo completo) o **.onnx** (se carga con `onnxruntime`). Si usan otro framework, expórtenlo a **.onnx**.
+La app usa el paquete `buffalo_l` de InsightFace: el detector SCRFD (`det_10g.onnx`) y el reconocedor ArcFace (`w600k_r50.onnx`). No está en el repositorio porque los modelos no se versionan. Hay que descargarlo del release oficial y descomprimirlo dentro de `models/buffalo_l/`:
 
-Recordá actualizar la configuración del `.env` correspondiente (`MODEL_NAME`, `EMBEDDING_DIM`, `FACE_SIZE`, `SIMILARITY_THRESHOLD`) para que apunte a tu modelo.
+```bash
+curl -L -o buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+unzip buffalo_l.zip -d models/buffalo_l
+```
+
+En Windows, desde PowerShell: `Expand-Archive buffalo_l.zip -DestinationPath models/buffalo_l`.
+
+Los dos `.env.*.example` ya apuntan a este modelo (`MODEL_NAME=buffalo_l/w600k_r50.onnx`, `DETECTOR_MODEL_NAME=buffalo_l`) y tienen el umbral que calibramos en la notebook 2 (`SIMILARITY_THRESHOLD=0.31`).
 
 > El backend no arranca si no existe el archivo `models/<MODEL_NAME>`.
 
@@ -138,7 +149,7 @@ uvicorn frontend.app:app --port 8080
 Ajustá el archivo *.env.local.example* a tus necesidades. Desde la carpeta `src`, en otra terminal:
 
 ```bash
-cp ../models/<NOMBRE_DE_TU_MODELO> models/
+cp -r ../models/buffalo_l models/
 cp ../.env.local.example .env
 uvicorn app.main:app --reload --port 8000
 ```
@@ -169,37 +180,61 @@ No hardcodeen parámetros: configúrenlos mediante `.env`.
 - Persistencia configurable en JSON o en PostgreSQL + pgvector (`USE_PGVECTOR`).
 - Frontend para registrar identidades, predecir y visualizar los resultados (cajas, etiquetas y keypoints).
 
-### A implementar por el grupo (`src/lib/services/face_service.py`)
+### Implementado por el grupo (`src/lib/services/face_service.py`)
 
-Estas funciones hoy lanzan `NotImplementedError`:
+1. `detect_faces`: detecta los rostros con SCRFD, el mismo detector que usamos en la notebook 1. Descarta las detecciones con score menor a `DET_SCORE_THRESHOLD` y los rostros de lado menor a `MIN_FACE_SIZE` (40 px, el mismo mínimo que en la limpieza del dataset), y devuelve las cajas `(x1, y1, x2, y2)`.
+2. `align_face`: toma los 5 puntos de la cara que da el detector y los lleva a la plantilla de ArcFace con una transformación de similitud (`norm_crop`), en un recorte de `FACE_SIZE` (112×112). Devuelve un `AlignedFace` con los keypoints relativos a la caja.
+3. `extract_embedding_from_face`: pasa el rostro de BGR a RGB, lo escala con `(x - 127.5) / 127.5`, lo corre en `w600k_r50.onnx` y normaliza L2 el embedding de 512 dimensiones.
 
-1. `detect_faces`: detección de rostros. Devuelve las cajas `(x1, y1, x2, y2)`.
-2. `align_face`: alineación con landmarks y normalización a `FACE_SIZE`. Devuelve un `AlignedFace`.
-3. `extract_embedding_from_face`: extracción del embedding de dimensión `EMBEDDING_DIM`, normalizado L2.
-
-Ver detalles y recomendaciones en [ENUNCIADO.md](ENUNCIADO.md#4-parte-3--integración-en-la-aplicación).
+Para cargar el detector modificamos `_load_detector`: en lugar de un archivo `.pth`/`.onnx`, carga el `FaceAnalysis` de InsightFace con solo el módulo de detección, desde la carpeta `buffalo_l`. La detección y la alineación están en `src/lib/face_pipeline.py`, que también usan las notebooks, así el preprocesamiento es el mismo al entrenar y en la app.
 
 ## Modelo y fine-tuning
 
-Completar en la entrega final:
+El detalle completo está en `2-train.ipynb`.
 
-- Modelo elegido y link público de descarga
-- Arquitectura (ResNet, EfficientNet, ViT, CNN custom, etc.)
-- Justificación técnica y trade-offs frente al modelo descartado
-- Hiperparámetros y proceso de entrenamiento / fine-tuning
-- Umbral de similitud elegido y cómo se calibró
-- Análisis de errores (FP/FN)
-- Métricas: accuracy, precision, recall, AUC/EER
+**Modelo elegido:** el reconocedor `w600k_r50.onnx` del paquete `buffalo_l` de InsightFace, sin reentrenar. Es una ResNet-50 entrenada con la loss ArcFace sobre WebFace600K, con 43,6 millones de parámetros y embeddings de 512 dimensiones. El detector es `det_10g.onnx` (SCRFD-10GF) del mismo paquete. Los modelos de InsightFace son solo para investigación no comercial.
+
+Link público de descarga (release oficial de InsightFace): https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip. Se descomprime en `models/buffalo_l/`.
+
+También dejamos los modelos en una carpeta pública de Google Drive: https://drive.google.com/drive/folders/1HkZBFbuObM0hRuk4geiejqmRZC025INa?usp=sharing. Tiene `buffalo_l` y `modelo_a.zip`, con los pesos de la CNN propia (los checkpoints de los dos experimentos y el ONNX). `modelo_a.zip` se descomprime en `models/` y crea la carpeta `models/modelo_a/`.
+
+**Modelo descartado:** una CNN propia (`src/lib/models/custom_cnn.py`) de 4 bloques convolucionales con BatchNorm, global average pooling, Dropout y embedding de 128 dimensiones normalizado, con 1,2 millones de parámetros. La entrenamos desde cero con las 696 personas de train como clasificador por coseno, con AdamW (lr 0,001, weight decay 0,01), ReduceLROnPlateau, early stopping y batch de 128, y augmentation solo en train. Probamos dos cabezas, softmax y ArcFace (margen 0,5), y elegimos softmax porque separó mejor a las personas nuevas de validación.
+
+**Umbral:** `SIMILARITY_THRESHOLD=0.31` con similitud coseno. Lo calibramos en validación simulando la app (cada consulta contra la galería de personas registradas): es el umbral más bajo con el que como mucho el 1% de los desconocidos recibe un nombre. El umbral del EER de la verificación (0,19) no sirve para la app porque le daba un nombre a más de la mitad de los desconocidos.
+
+**Métricas en test** (150 personas que ninguno de los modelos vio al entrenar):
+
+| Métrica | CNN propia | InsightFace |
+|---|---|---|
+| AUC (verificación) | 0,928 | 0,99996 |
+| EER | 14,9% | 0,24% |
+| TAR @ FAR=1e-3 | 25,0% | 99,6% |
+| Top-1 | 51,1% | 100% |
+| Precision / Recall / F1 macro | 53,9% / 9,7% / 14,8% | 99,8% / 99,7% / 99,8% |
+| Registrados reconocidos con su nombre | 9,7% | 99,7% |
+| Desconocidos rechazados | 99,6% | 99,2% |
+| Latencia en CPU (ms por rostro) | ~3 | 30 a 40 |
+| Tamaño (MB) | 4,8 | 174 |
+
+**Justificación:** elegimos InsightFace por desempeño. Con el nivel de seguridad que fijamos, la CNN propia reconoce a menos del 10% de las personas registradas, y no existe un umbral donde sus dos errores sean bajos a la vez. Es 36 veces más chica y unas 10 veces más rápida, pero la latencia de InsightFace alcanza para la app, que procesa fotos sueltas. La CNN propia rinde menos principalmente por los datos: con unas 18 fotos de 696 personas aprendió atributos generales (color de piel, pelo, género, expresión) y no los rasgos finos que distinguen a personas parecidas.
+
+**Análisis de errores:** los falsos negativos de los dos modelos aparecen sobre todo con la cabeza girada, con rostros que eran chicos en la foto original y con cambios de apariencia (anteojos, gorras, maquillaje, pelo). Los falsos positivos de InsightFace son personas que se parecen de verdad, con similitudes cercanas al umbral. También encontramos algunas fotos de CelebA que parecen tener la etiqueta equivocada.
 
 ## Dataset
 
-Documentar:
+El detalle completo está en `1-pre-processing.ipynb`.
 
-- Fuente de las imágenes (propias y/o públicas) y su licencia
-- Cantidad por clase/persona
-- Balance de clases
-- Variaciones (iluminación, pose, expresión)
-- Reglas de filtrado y calidad
+**Fuente y licencia:** usamos CelebA (Large-scale CelebFaces Attributes), de MMLAB de The Chinese University of Hong Kong, en su versión de rostros alineados (`img_align_celeba`, 178×218 px). Tiene 202.599 fotos de 10.177 celebridades. Su licencia permite usarlo solo para investigación académica no comercial y no permite redistribuirlo, así que no subimos el dataset ni los datos procesados: se descarga desde la página oficial (https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) y se procesa corriendo la notebook 1.
+
+**Cantidad por persona y balance:** nos quedamos con las personas que tienen al menos 21 fotos (la mediana de CelebA) y elegimos 1.000 al azar. Después de la limpieza exigimos un mínimo de 15 fotos por persona. El dataset final tiene **25.721 imágenes de 995 personas**, con entre 15 y 30 fotos cada una (mediana 27). La persona con más fotos tiene el doble que la que menos tiene, así que no hizo falta corregir el desbalance al entrenar.
+
+**Variaciones:** las fotos tienen variaciones reales de iluminación, pose, expresión y oclusiones (anteojos, sombreros, pelo). Las medimos con los píxeles del rostro, los puntos de la cara y los atributos anotados de CelebA. Las conservamos porque son las que el modelo tiene que tolerar.
+
+**Reglas de filtrado y calidad:** aplicamos reglas con umbrales fijos y validados con ejemplos. Descartamos archivos corruptos, fotos sin rostro o con varios rostros ambiguos, rostros de menos de 40 px en la foto original, fotos borrosas (varianza del Laplaciano), sin color o mal expuestas, y casi-duplicados dentro de una misma persona y entre personas distintas. También descartamos las fotos que se parecen más a otra persona que a la suya según los embeddings de InsightFace (posibles etiquetas equivocadas), un par de gemelas y las personas que quedaron con menos de 15 fotos.
+
+**Detección y alineación:** detectamos los rostros con SCRFD (`buffalo_l` de InsightFace) y los alineamos a 112×112 con los 5 puntos de la cara. Es el mismo pipeline que usa la app (`src/lib/face_pipeline.py`).
+
+**Splits:** separamos por persona en 70% train (696 personas), 15% validación (149) y 15% test (150), así que las personas de validación y test nunca se ven al entrenar. En validación y test, unas 120 personas de cada uno se registran con 3 fotos y las otras 30 se usan como desconocidos, para evaluar el rechazo como `unknown`.
 
 ## Notas importantes
 

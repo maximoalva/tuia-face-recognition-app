@@ -32,14 +32,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     post_start:
+      # El hook corre apenas arranca el contenedor, antes de que postgres acepte conexiones: reintenta hasta que pueda
       - command:
-          - psql
-          - -U
-          - ${POSTGRES_USER:-faces_user}
-          - -d
-          - ${POSTGRES_DB:-faces}
+          - sh
           - -c
-          - CREATE EXTENSION IF NOT EXISTS vector;
+          - until psql -U "${POSTGRES_USER:-faces_user}" -d "${POSTGRES_DB:-faces}" -c "CREATE EXTENSION IF NOT EXISTS vector;"; do sleep 1; done
 
   frontend:
     build:
